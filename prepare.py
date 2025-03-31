@@ -2,9 +2,11 @@
 This script writes activation cache for a given dataset to disk. 
 
 WARNING: An activation caches can be HUGE on disk. So, tune `batches_per_shard`, `batch_size`, and `max_shards_created` to limit disk usage.
+A hidden state with dimension 768 and 12 layers averages 34.375kB per token. So, you can get ~1.5k tokens in a 50MB partition
 
 Sorting by length with `--sort_ds_by_len` makes forward passes more efficient by packing same-sized instances into a single mini-batch. But
 when verifying a minibatch fits in memory, use `--sort_ds_reversed` to ensure the longest inputs are processed first.
+
 
 Example Usage:
 ```python
@@ -17,7 +19,7 @@ Example Usage:
         --ds_repo austindavis/lichess-uci-scored \
         --ds_split train  \
         --ds_input_column Transcript \
-        --ds_label_columns Site WhiteElo BlackElo Scores \
+        --ds_label_columns Site WhiteElo BlackElo Transcript Scores \
         --n_pos 1024  \
         --log_file log.txt
 ```
@@ -40,7 +42,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 DEBUG = False
-DEBUG_ARGS = '--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --batches_per_shard 5 --batch_size 2  --max_shards_created 1 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Scores --n_pos 1024 --log_file log.txt'.split()
+DEBUG_ARGS = '--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --batches_per_shard 5 --batch_size 2  --max_shards_created 1 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt'.split()
 
 def parse_args():
     parser = argparse.ArgumentParser()
