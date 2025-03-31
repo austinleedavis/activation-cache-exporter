@@ -45,23 +45,27 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--output_dir", required=True, type=str, help="Directory where processed files are saved.")
-    parser.add_argument("--sort_ds_by_len", action='store_true', help="Sort the dataset input column by number of characters. Enabling increases efficiency of the forward pass")
-    parser.add_argument("--sort_ds_reversed", action='store_true', help="Sort the dataset input column in reverse (longest first). Especially helpful when checking batch size.")
-    parser.add_argument("--ds_shuffle_seed", type=int, help="Seed to shuffle the dataset. If none provided, the original dataset order is used.")
-    parser.add_argument("--ds_config", required=True, type=str, help="Hf 🤗 dataset config name (e.g., '202301')") 
     parser.add_argument("--ds_repo", required=True, type=str, help="Hf 🤗 dataset repository name (e.g., 'user/repo')") 
+    parser.add_argument("--ds_config", required=True, type=str, help="Hf 🤗 dataset config name (e.g., '202301')") 
     parser.add_argument("--ds_split", required=True, type=str, help="Hf 🤗 dataset split name (e.g. 'train')") 
+    parser.add_argument("--model_checkpoint", required=True, type=str, help="local or Hf 🤗 model used to generate hidden state vectors")
+
     parser.add_argument("--ds_input_column", type=str, help="Dataset column name that will be tokenized. (Default='Transcript')", default="Transcript")
     parser.add_argument("--ds_label_columns", nargs="+", type=str, help="Dataset column name(s) that will label each output record. (Default=['Site', 'Transcript'])", default=["Site", "Transcript"])
-    parser.add_argument("--n_pos", type=int, help="Number of positions to sample. Sampling is done from the final n_pos positions.", default=-1)
-    parser.add_argument("--device", type=str, help="Device for LLM.", default='cuda')
-    parser.add_argument("--model_checkpoint", required=True, type=str, help="local or Hf 🤗 model used to generate hidden state vectors")
-    parser.add_argument("--log_level", type=str, help="Log level. (Default: INFO)", default="INFO")
-    parser.add_argument("--log_file", required=True, type=str, help="Specify a log filename to send logging to disk. Otherwise, prints log info to stdout.")
+
+    parser.add_argument("--max_shards_created", type=int, help="Activation caches are massive (~6 GB/shard). This value limits the total number of activation shards created to prevent out of disk errors.", default=2)
     parser.add_argument("--batches_per_shard", type=int, help="Number of minibatches saved to each shard", default=500)
     parser.add_argument("--batch_size", type=int, help="Batch size for each forward pass through llm. (Default: 8)", default=8)
     parser.add_argument("--auto_find_batch_size", action='store_true', help="Automatically deduce the max memory-safe batch size.")
-    parser.add_argument("--max_shards_created", type=int, help="Activation caches are massive (~6 GB/shard). This value limits the total number of activation shards created to prevent out of disk errors.", default=2)
+    
+    parser.add_argument("--sort_ds_by_len", action='store_true', help="Sort the dataset input column by number of characters. Enabling increases efficiency of the forward pass")
+    parser.add_argument("--sort_ds_reversed", action='store_true', help="Sort the dataset input column in reverse (longest first). Especially helpful when checking batch size.")
+    parser.add_argument("--ds_shuffle_seed", type=int, help="Seed to shuffle the dataset. If none provided, the original dataset order is used.")
+    parser.add_argument("--n_pos", type=int, help="Number of positions to sample. Sampling is done from the final n_pos positions.", default=-1)
+    parser.add_argument("--device", type=str, help="Device for LLM.", default='cuda')
+    
+    parser.add_argument("--log_level", type=str, help="Log level. (Default: INFO)", default="INFO")
+    parser.add_argument("--log_file", type=str, help="Specify a log filename to send logging to disk. Otherwise, prints log info to stdout.")
 
     args = parser.parse_args(DEBUG_ARGS if DEBUG else None)    
     return args
