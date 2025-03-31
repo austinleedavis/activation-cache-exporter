@@ -29,13 +29,16 @@ if __name__ == "__main__":
                                     path_or_fileobj=ds_args_file, 
                                     path_in_repo="args.txt",
                                     repo_id=args.repo_id,
+                                    repo_type="dataset",
                                     )
     print(f"{commit_info=}")
 
-    data_commit_info =huggingface_hub.upload_folder(repo_id=args.repo_id, 
-                                  repo_type='dataset', 
-                                  folder_path=args.output_dir,
-                                  path_in_repo="data",
-                                  allow_patterns="*.parquet.gz")
+    data_commit_info =huggingface_hub.upload_folder(
+                                repo_id=args.repo_id, 
+                                repo_type='dataset', 
+                                folder_path=args.output_dir,
+                                path_in_repo="data",
+                                allow_patterns="*.parquet.gz"
+                                )
     
     print(f"{data_commit_info=}")
