@@ -15,7 +15,7 @@ cd ~/git/activation-cache-exporter
 apptainer exec ~/containers/train-transformer_latest.sif bash <<zzzRunHEREinTheContainer
 nvidia-smi
 pip install -r requirements.txt
-HF_HUB_ENABLE_HF_TRANSFER=1 python publish.sh data/activations/sorted austindavis/chessGPT2_hidden_states
+HF_HUB_ENABLE_HF_TRANSFER=1 python publish.py data/activations/sorted austindavis/chessGPT2_hidden_states
 exit
 zzzRunHEREinTheContainer
 
