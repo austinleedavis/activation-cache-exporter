@@ -29,6 +29,7 @@ The resulting dataset can be loaded using:
 """
 import argparse
 import logging
+import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
 
@@ -172,7 +173,9 @@ if __name__ == "__main__":
     if args.sort_ds_by_len:
         # Hint: This sorts by number of characters, not num tokens!
         len_col_name = f"{args.ds_input_column}_Length"
-        ds = ds.map(map_to_length, num_proc=16, fn_kwargs=dict(input_column_name=args.ds_input_column, len_col_name=len_col_name), desc="Compute Input Column Len")
+        num_procs = multiprocessing.cpu_count()
+        half_procs = max(1,num_procs // 2)
+        ds = ds.map(map_to_length, num_proc=half_procs, fn_kwargs=dict(input_column_name=args.ds_input_column, len_col_name=len_col_name), desc="Compute Input Column Len")
         ds = ds.sort(column_names=len_col_name, reverse=args.sort_ds_reversed)
 
     ##############
@@ -241,7 +244,7 @@ if __name__ == "__main__":
                     break
 
             batch = ds[record_idx: record_idx + args.batch_size]
-            text = batch[args.ds_input_column]
+            text = [t + " " for t in batch[args.ds_input_column]]
 
             tokenized_games = tok(
                 text,
@@ -251,9 +254,6 @@ if __name__ == "__main__":
                 max_length=max_length,
                 return_token_type_ids=False,
             )
-            # bs = 20
-            # tokenized_games['input_ids'] = torch.randint(1,72,(bs,1024))
-            # tokenized_games['attention_mask'] = torch.ones((bs,1024))
 
             # Compute number of positions in each game transcript
             token_count = tokenized_games['attention_mask'].sum(dim=-1).tolist()
