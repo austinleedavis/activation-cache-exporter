@@ -1,11 +1,10 @@
 #!/bin/bash
-#SBATCH --job-name=cache
+#SBATCH --job-name=publish
 #SBATCH --time=20:30:00
 #SBATCH --partition=highgpu
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
-#SBATCH --output=slurm/cache_run%j.out
-#SBATCH --error=slurm/cache_run%j.out
+#SBATCH --cpus-per-task=100
+#SBATCH --output=slurm/publish_run%j.out
+#SBATCH --error=slurm/publish_run%j.out
 
 # Load required modules
 module load apptainer
