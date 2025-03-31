@@ -20,11 +20,20 @@ if __name__ == "__main__":
 
     ds_args_file = os.path.join(args.output_dir, "args.txt")
     
-    huggingface_hub.create_repo(repo_id=args.repo_id, 
-                                repo_type="dataset")
-    huggingface_hub.upload_file(ds_args_file)
-    huggingface_hub.upload_folder(repo_id=args.repo_id, 
+    report_url = huggingface_hub.create_repo(repo_id=args.repo_id, 
+                                repo_type="dataset",
+                                exist_ok=True)
+    print(f"{report_url=}")
+
+    commit_info = huggingface_hub.upload_file(path_or_fileobj=ds_args_file, 
+                                path_in_repo="args.txt",
+                                repo_id=args.repo_id,)
+    print(f"{commit_info=}")
+
+    data_commit_info =huggingface_hub.upload_folder(repo_id=args.repo_id, 
                                   repo_type='dataset', 
                                   folder_path=args.output_dir,
                                   path_in_repo="data",
                                   allow_patterns="*.parquet.gz")
+    
+    print(f"{data_commit_info=}")
