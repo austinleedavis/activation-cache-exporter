@@ -36,12 +36,13 @@ import os
 from concurrent.futures import ProcessPoolExecutor
 
 import datasets
+import numpy as np
 import torch
 from datasets import Dataset, concatenate_datasets, load_dataset
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-DEBUG = False
+DEBUG = True
 DEBUG_ARGS = '--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --batches_per_shard 5 --batch_size 2  --max_shards_created 1 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt'.split()
 
 def parse_args():
@@ -135,6 +136,16 @@ def find_largest_batch_size_binary_search_synthetic(llm, device, max_length, max
     pbar.close()
     return best
 
+def remove_prefixes(strings: list[str], indices: list[int]) -> list[int]:
+    result = []
+
+    for i, s in enumerate(strings[:-1]):
+        # if any(other.startswith(s) for other in strings[i+1:]):
+        if str(strings[i+1]).startswith(str(s)):
+            continue
+        result.append(indices[i])
+
+    return result
 
 if __name__ == "__main__":
 
@@ -162,6 +173,11 @@ if __name__ == "__main__":
     # Load Dataset
     ##############
     ds = load_dataset(path=args.ds_repo, name=args.ds_config, split=args.ds_split)
+
+    # deduplicate and remove repeated prefixes
+    values, unique_indices = np.unique(ds[args.ds_input_column], return_index=True, axis=0)
+    deprefixed_indices = remove_prefixes(values, unique_indices.tolist())
+    ds = ds.select(deprefixed_indices)
 
     # dataset metrics
     num_batches = torch.math.ceil((len(ds)/args.batch_size))
@@ -246,7 +262,7 @@ if __name__ == "__main__":
                     break
 
             batch = ds[record_idx: record_idx + args.batch_size]
-            text = [t + " " for t in batch[args.ds_input_column]]
+            text = batch[args.ds_input_column]
 
             tokenized_games = tok(
                 text,
