@@ -1,3 +1,6 @@
+tqdm
+torch
+argparse
 datasets
 git+https://github.com/austinleedavis/tokenizers.git#subdirectory=bindings/python
 transformers
