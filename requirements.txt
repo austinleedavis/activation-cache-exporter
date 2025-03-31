@@ -4,3 +4,4 @@ argparse
 datasets
 git+https://github.com/austinleedavis/tokenizers.git#subdirectory=bindings/python
 transformers
+huggingface_hub[hf_transfer] # used to get higher hf hub transfer speeds
