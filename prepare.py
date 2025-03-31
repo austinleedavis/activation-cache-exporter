@@ -42,7 +42,7 @@ from datasets import Dataset, concatenate_datasets, load_dataset
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-DEBUG = True
+DEBUG = False
 DEBUG_ARGS = '--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --batches_per_shard 5 --batch_size 2  --max_shards_created 1 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt'.split()
 
 def parse_args():
@@ -187,8 +187,7 @@ if __name__ == "__main__":
 
     if args.ds_shuffle_seed:
         ds = ds.shuffle(args.ds_shuffle_seed).select(range(total_records))
-
-    if args.sort_ds_by_len:
+    elif args.sort_ds_by_len:
         # Hint: This sorts by number of characters, not num tokens!
         len_col_name = f"{args.ds_input_column}_Length"
         num_procs = multiprocessing.cpu_count()
