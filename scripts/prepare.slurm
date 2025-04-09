@@ -25,7 +25,7 @@ python prepare.py --output_dir data/activations/lichess-uci-201410 \
     --auto_find_batch_size \
     --sort_ds_reversed \
     --records_per_shard 269470 \
-    --max_shards 10 \
+    --max_shards 200 \
     --model_checkpoint austindavis/chessGPT2 \
     --ds_config 201410 \
     --ds_repo austindavis/lichess-uci \
