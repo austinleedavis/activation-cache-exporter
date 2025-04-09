@@ -33,6 +33,7 @@ The resulting dataset can be loaded using:
 """
 
 import argparse
+import asyncio
 import logging
 import multiprocessing
 import os
@@ -46,7 +47,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 DEBUG = False
-DEBUG_ARGS = "--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --records_per_shard 1500 --batch_size 2  --max_shards 3 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt".split()
+DEBUG_ARGS = "--output_dir data/activations/unsorted --sort_ds_by_len --sort_ds_reversed --auto_find_batch_size --records_per_shard 5000 --batch_size 2  --max_shards 3 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt".split()
 
 
 def parse_args():
@@ -144,9 +145,9 @@ def find_largest_batch_size_binary_search_synthetic(llm, device, max_length, max
             else:
                 pbar.close()
                 raise e
-    pbar.set_description_str(f"Final batch_size={best}")
+    pbar.set_description_str(f"Final batch_size={best//2}")
     pbar.close()
-    return best
+    return best // 2
 
 
 def remove_prefixes(strings: list[str], indices: list[int]) -> list[int]:
@@ -249,6 +250,14 @@ if __name__ == "__main__":
     ##############
     # Define shard saving function
     ##############
+
+    async def save_dataset_to_parquet_async(dataset: Dataset, path: str):
+        """This probably only works best when writing large files"""
+        loop = asyncio.get_event_loop()
+        logging.info(f"Saving dataset chunk to {path}")
+        await loop.run_in_executor(None, dataset.to_parquet, path)
+        logging.info(f"Saved dataset chunk to {path}!")
+
     def flush_shards(main_dataset: Dataset, shards_created: int, shard_progress: tqdm, force=False):
         while len(main_dataset) > args.records_per_shard or force:
             if shards_created >= args.max_shards:
@@ -256,8 +265,8 @@ if __name__ == "__main__":
             file_path = get_output_file(args.output_dir, shards_created, total_shards_est)
             to_save = main_dataset.select(range(args.records_per_shard))
             main_dataset = main_dataset.select(range(args.records_per_shard, len(main_dataset)))
-            to_save.to_parquet(file_path)
-            logging.info(f"Saved dataset chunk to {file_path}")
+            asyncio.run(save_dataset_to_parquet_async(to_save, file_path))
+            # to_save.to_parquet(file_path)
             shards_created += 1
             shard_progress.update()
         return main_dataset, shards_created, True
