@@ -1,8 +1,8 @@
 """
 This script writes activation cache for a given dataset to disk. 
 
-WARNING: An activation caches can be HUGE on disk. So, tune `batches_per_shard`, `batch_size`, and `max_shards_created` to limit disk usage.
-A hidden state with dimension 768 and 12 layers averages 34.375kB per token. So, you can get ~1.5k tokens in a 50MB partition
+WARNING: An activation caches can be HUGE on disk. So, tune `records_per_shard` and `max_shards` to limit disk usage.
+A hidden state with dimension 768 and 12 layers averages 47kB per token. So, you can get ~1.5k tokens in a 50MB partition
 
 Sorting by length with `--sort_ds_by_len` makes forward passes more efficient by packing same-sized instances into a single mini-batch. But
 when verifying a minibatch fits in memory, use `--sort_ds_reversed` to ensure the longest inputs are processed first.
@@ -10,18 +10,20 @@ when verifying a minibatch fits in memory, use `--sort_ds_reversed` to ensure th
 
 Example Usage:
 ```python
-    python prepare.py --output_dir data/activations/sorted \
-        --batches_per_shard 10  \
-        --batch_size 2  \
-        --max_shards_created 1 \
-        --model_checkpoint austindavis/chessGPT2  \
-        --ds_config 202302-00000-00009 \
-        --ds_repo austindavis/lichess-uci-scored \
-        --ds_split train  \
-        --ds_input_column Transcript \
-        --ds_label_columns Site WhiteElo BlackElo Transcript Scores \
-        --n_pos 1024  \
-        --log_file log.txt
+python prepare.py --output_dir data/activations/lichess-uci-201410 \
+    --sort_ds_by_len \
+    --batch_size 128  \
+    --auto_find_batch_size \
+    --sort_ds_reversed \
+    --records_per_shard 1024 \
+    --model_checkpoint austindavis/chessGPT2 \
+    --ds_config 201410 \
+    --ds_repo austindavis/lichess-uci \
+    --ds_split train \
+    --ds_input_column Transcript \
+    --ds_label_columns Site WhiteElo BlackElo Transcript \
+    --n_pos 1024 \
+    --log_file log.txt
 ```
 
 The resulting dataset can be loaded using:
@@ -44,7 +46,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 DEBUG = False
-DEBUG_ARGS = "--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --batches_per_shard 5 --batch_size 2  --max_shards_created 1 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt".split()
+DEBUG_ARGS = "--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --records_per_shard 1500 --batch_size 2  --max_shards 3 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt".split()
 
 
 def parse_args():
@@ -60,8 +62,8 @@ def parse_args():
     parser.add_argument("--ds_input_column", type=str, help="Dataset column name that will be tokenized. (Default='Transcript')", default="Transcript")
     parser.add_argument("--ds_label_columns", nargs="+", type=str, help="Dataset column name(s) that will label each output record. (Default=['Site', 'Transcript'])", default=["Site", "Transcript"])
 
-    parser.add_argument("--max_shards_created", type=int, help="Activation caches are massive (~6 GB/shard). This value limits the total number of activation shards created to prevent out of disk errors.", default=2)
-    parser.add_argument("--batches_per_shard", type=int, help="Number of minibatches saved to each shard", default=500)
+    parser.add_argument("--max_shards", type=int, help="Max number of shards created (to prevent out of disk errors on large datasets).", default=1e10)
+    parser.add_argument("--records_per_shard", type=int, help="Number of records saved to each shard (~47kB/record)", default=1024)
     parser.add_argument("--batch_size", type=int, help="Batch size for each forward pass through llm. (Default: 8)", default=8)
     parser.add_argument("--auto_find_batch_size", action='store_true', help="Automatically deduce the max memory-safe batch size.")
     
@@ -108,14 +110,15 @@ def process_single_game(game_id, hidden_states, token_count, n_pos_limit, batch,
     min_index = max(0, token_count[game_id] - n_pos_limit)
     max_index = min(min_index + n_pos_limit, token_count[game_id])
 
-    # Shape: (n_layers, n_positions, d_hidden)
-    record = {"HiddenStates": transcript_hidden_states[:, min_index:max_index].numpy()}
+    for i in range(min_index, max_index):
+        # Shape: (n_layers, n_positions, d_hidden)
+        record = {"HiddenStates": transcript_hidden_states[:, i].numpy()}
 
-    # Add additional labels from dataset columns
-    for label in label_columns:
-        record[label] = batch[label][game_id]
+        # Add additional labels from dataset columns
+        for label in label_columns:
+            record[label] = batch[label][game_id]
 
-    expanded_records.append(record)
+        expanded_records.append(record)
 
     return expanded_records
 
@@ -192,12 +195,12 @@ if __name__ == "__main__":
 
     # dataset metrics
     num_batches = torch.math.ceil((len(ds) / args.batch_size))
-    total_shards = min(args.max_shards_created, torch.math.ceil(num_batches / args.batches_per_shard))
-    total_batches = total_shards * args.batches_per_shard
-    total_records = total_batches * args.batch_size
+    # estimate total records assuming 468 chars=94 moves=281 tokens/game ~ rounded to 300
+    total_records_est = 300 * len(ds)
+    total_shards_est = min(args.max_shards, 1 + total_records_est // args.records_per_shard)
 
     if args.ds_shuffle_seed:
-        ds = ds.shuffle(args.ds_shuffle_seed).select(range(total_records))
+        ds = ds.shuffle(args.ds_shuffle_seed)  # .select(range(total_records))
     elif args.sort_ds_by_len:
         # Hint: This sorts by number of characters, not num tokens!
         len_col_name = f"{args.ds_input_column}_Length"
@@ -217,9 +220,7 @@ if __name__ == "__main__":
     DEVICE = torch.device(args.device)
 
     llm = (
-        AutoModelForCausalLM.from_pretrained(args.model_checkpoint)
-        .requires_grad_(False)  # huge memory savings here
-        .to(device=DEVICE)  # big speed improvement
+        AutoModelForCausalLM.from_pretrained(args.model_checkpoint).requires_grad_(False).to(device=DEVICE)
     )
 
     # Setup tokenizer here because dataset mapping ruins forces parallelism=False
@@ -246,6 +247,22 @@ if __name__ == "__main__":
         logging.info(f"Auto-selected batch size: {args.batch_size}")
 
     ##############
+    # Define shard saving function
+    ##############
+    def flush_shards(main_dataset: Dataset, shards_created: int, shard_progress: tqdm, force=False):
+        while len(main_dataset) > args.records_per_shard or force:
+            if shards_created >= args.max_shards:
+                return main_dataset, shards_created, False
+            file_path = get_output_file(args.output_dir, shards_created, total_shards_est)
+            to_save = main_dataset.select(range(args.records_per_shard))
+            main_dataset = main_dataset.select(range(args.records_per_shard, len(main_dataset)))
+            to_save.to_parquet(file_path)
+            logging.info(f"Saved dataset chunk to {file_path}")
+            shards_created += 1
+            shard_progress.update()
+        return main_dataset, shards_created, True
+
+    ##############
     # Main loop
     ##############
     datasets.disable_progress_bar()
@@ -253,32 +270,19 @@ if __name__ == "__main__":
     # Initialize an empty Huggingface dataset
     main_dataset = init_dataset_shard(args.ds_label_columns)
 
-    logging.info(f"{total_batches=} {total_shards=}")
-    shard_progress_bar = tqdm(range(total_shards), total=total_shards, desc="Exporting Shards")
-    batches_progress_bar = tqdm(range(total_batches), total=total_batches, desc="Processing Batches")
+    logging.info(f"{total_records_est=:,} {total_shards_est=:,}")
+    records_progress = tqdm(range(total_records_est), total=total_records_est, desc="Processing Records")
+    shard_progress = tqdm(range(total_shards_est), total=total_shards_est, desc="Exporting Shards")
 
     file_counter = 0
     with ProcessPoolExecutor(max_workers=args.batch_size) as executor:
 
         for batch_idx, record_idx in enumerate(range(0, len(ds), args.batch_size)):
 
-            batches_progress_bar.update()
-
-            if (batch_idx + 1) % args.batches_per_shard == 0:
-                # Save the current main_dataset to disk
-                file_path = get_output_file(args.output_dir, file_counter, total_shards)
-                main_dataset.to_parquet(file_path)
-                # print(f"Saved dataset chunk to {file_path}")
-
-                # Reset main_dataset and increment file counter
-                main_dataset = init_dataset_shard(args.ds_label_columns)
-                file_counter += 1
-                shard_progress_bar.update()
-                if file_counter >= args.max_shards_created:
-                    logging.info(
-                        f"Processing finished due to max shards (={args.max_shards_created}) created. Exiting."
-                    )
-                    break
+            main_dataset, file_counter, ok = flush_shards(main_dataset, file_counter, shard_progress)
+            if not ok:
+                logging.info(f"Max shards (={args.max_shards}) created. Exiting.")
+                break
 
             batch = ds[record_idx : record_idx + args.batch_size]
             text = batch[args.ds_input_column]
@@ -326,6 +330,8 @@ if __name__ == "__main__":
             for future in futures:
                 batch_records.extend(future.result())
 
+            records_progress.update(len(batch_records))
+
             batch_dataset = Dataset.from_dict(
                 {"HiddenStates": [record["HiddenStates"] for record in batch_records]}
             )
@@ -339,6 +345,7 @@ if __name__ == "__main__":
 
         # Save remaining entries (if any) to disk
         if len(main_dataset) > 0:
-            # This code is only reachable if the max shard count exceeds len(dataset) / batches_per_shard
-            file_path = get_output_file(args.output_dir, file_counter, total_shards)
-            main_dataset.to_parquet(file_path)
+            # This code is only reachable if the max shard count is greater than what's needed to export the whole ds
+            flush_shards(main_dataset, file_counter, shard_progress, force=True)
+            # file_path = get_output_file(args.output_dir, file_counter, total_shards_est)
+            # main_dataset.to_parquet(file_path)
