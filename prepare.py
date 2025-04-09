@@ -29,6 +29,7 @@ The resulting dataset can be loaded using:
     datasets.load_dataset("parquet", data_files="data/activations/sorted/*.parquet")
 ```
 """
+
 import argparse
 import logging
 import multiprocessing
@@ -43,11 +44,13 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 DEBUG = False
-DEBUG_ARGS = '--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --batches_per_shard 5 --batch_size 2  --max_shards_created 1 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt'.split()
+DEBUG_ARGS = "--output_dir data/activations/unsorted --sort_ds_by_len --auto_find_batch_size --batches_per_shard 5 --batch_size 2  --max_shards_created 1 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt".split()
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
+    # fmt: off
     parser.add_argument("--output_dir", required=True, type=str, help="Directory where processed files are saved.")
     parser.add_argument("--ds_repo", required=True, type=str, help="Hf 🤗 dataset repository name (e.g., 'user/repo')") 
     parser.add_argument("--ds_config", required=True, type=str, help="Hf 🤗 dataset config name (e.g., '202301')") 
@@ -70,23 +73,30 @@ def parse_args():
     
     parser.add_argument("--log_level", type=str, help="Log level. (Default: INFO)", default="INFO")
     parser.add_argument("--log_file", type=str, help="Specify a log filename to send logging to disk. Otherwise, prints log info to stdout.")
+    # fmt: on
 
-    args = parser.parse_args(DEBUG_ARGS if DEBUG else None)    
+    args = parser.parse_args(DEBUG_ARGS if DEBUG else None)
     return args
+
 
 def map_to_length(row, input_column_name, len_col_name):
     return {len_col_name: len(row[input_column_name])}
 
+
 def init_dataset_shard(ds_label_columns: list[str]):
     main_dataset = Dataset.from_dict({"TokenPosition": [], "HiddenStates": []})
     for label in ds_label_columns:
-        assert label in ds.column_names, f"'{label}' not is a column in the source dataset. Check the `ds_label_columns` CLI argument."
+        assert (
+            label in ds.column_names
+        ), f"'{label}' not is a column in the source dataset. Check the `ds_label_columns` CLI argument."
         main_dataset = main_dataset.add_column(label, [])
     return main_dataset
 
+
 def get_output_file(output_dir: str, file_counter: int, total_shards: int):
-    format_string = f"0{len(str(total_shards))}" # leading zeros based on max number of shards
+    format_string = f"0{len(str(total_shards))}"  # leading zeros based on max number of shards
     return os.path.join(output_dir, f"activations_shard_{file_counter:{format_string}}.parquet")
+
 
 def process_single_game(game_id, hidden_states, token_count, n_pos_limit, batch, label_columns):
     """Helper function to process a single game's hidden states and create a record."""
@@ -94,14 +104,12 @@ def process_single_game(game_id, hidden_states, token_count, n_pos_limit, batch,
 
     # Slice out hidden states for a single transcript
     transcript_hidden_states = hidden_states[:, game_id]  # Final shape: (n_layers, n_positions, d_hidden)
-    
+
     min_index = max(0, token_count[game_id] - n_pos_limit)
     max_index = min(min_index + n_pos_limit, token_count[game_id])
 
     # Shape: (n_layers, n_positions, d_hidden)
-    record = {
-        "HiddenStates": transcript_hidden_states[:, min_index:max_index].numpy()  
-    }
+    record = {"HiddenStates": transcript_hidden_states[:, min_index:max_index].numpy()}
 
     # Add additional labels from dataset columns
     for label in label_columns:
@@ -110,6 +118,7 @@ def process_single_game(game_id, hidden_states, token_count, n_pos_limit, batch,
     expanded_records.append(record)
 
     return expanded_records
+
 
 def find_largest_batch_size_binary_search_synthetic(llm, device, max_length, max_batch_size=1024):
     low, high = 1, max_batch_size
@@ -126,7 +135,7 @@ def find_largest_batch_size_binary_search_synthetic(llm, device, max_length, max
             best = mid
             low = mid + 1
         except RuntimeError as e:
-            if 'CUDA out of memory' in str(e):
+            if "CUDA out of memory" in str(e):
                 torch.cuda.empty_cache()
                 high = mid - 1
             else:
@@ -136,16 +145,18 @@ def find_largest_batch_size_binary_search_synthetic(llm, device, max_length, max
     pbar.close()
     return best
 
+
 def remove_prefixes(strings: list[str], indices: list[int]) -> list[int]:
     result = []
 
     for i, s in enumerate(strings[:-1]):
         # if any(other.startswith(s) for other in strings[i+1:]):
-        if str(strings[i+1]).startswith(str(s)):
+        if str(strings[i + 1]).startswith(str(s)):
             continue
         result.append(indices[i])
 
     return result
+
 
 if __name__ == "__main__":
 
@@ -155,8 +166,8 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=False)
 
     # Write arguments to the output directory
-    with open(os.path.join(args.output_dir,"args.txt"), "x") as arg_log:
-        arg_log.writelines([f"{k}: {v}\n" for k,v in args.__dict__.items()])
+    with open(os.path.join(args.output_dir, "args.txt"), "x") as arg_log:
+        arg_log.writelines([f"{k}: {v}\n" for k, v in args.__dict__.items()])
 
     ##############
     # Setup Logging
@@ -166,7 +177,7 @@ if __name__ == "__main__":
 
     numeric_level = getattr(logging, args.log_level.upper(), None)
     if not isinstance(numeric_level, int):
-        raise ValueError(f'Invalid log level: {args.log_level}')
+        raise ValueError(f"Invalid log level: {args.log_level}")
     logging.basicConfig(level=numeric_level, filename=log_file_path)
 
     ##############
@@ -180,7 +191,7 @@ if __name__ == "__main__":
     ds = ds.select(deprefixed_indices)
 
     # dataset metrics
-    num_batches = torch.math.ceil((len(ds)/args.batch_size))
+    num_batches = torch.math.ceil((len(ds) / args.batch_size))
     total_shards = min(args.max_shards_created, torch.math.ceil(num_batches / args.batches_per_shard))
     total_batches = total_shards * args.batches_per_shard
     total_records = total_batches * args.batch_size
@@ -191,8 +202,13 @@ if __name__ == "__main__":
         # Hint: This sorts by number of characters, not num tokens!
         len_col_name = f"{args.ds_input_column}_Length"
         num_procs = multiprocessing.cpu_count()
-        half_procs = max(1,num_procs // 2)
-        ds = ds.map(map_to_length, num_proc=half_procs, fn_kwargs=dict(input_column_name=args.ds_input_column, len_col_name=len_col_name), desc="Compute Input Column Len")
+        half_procs = max(1, num_procs // 2)
+        ds = ds.map(
+            map_to_length,
+            num_proc=half_procs,
+            fn_kwargs=dict(input_column_name=args.ds_input_column, len_col_name=len_col_name),
+            desc="Compute Input Column Len",
+        )
         ds = ds.sort(column_names=len_col_name, reverse=args.sort_ds_reversed)
 
     ##############
@@ -202,12 +218,12 @@ if __name__ == "__main__":
 
     llm = (
         AutoModelForCausalLM.from_pretrained(args.model_checkpoint)
-            .requires_grad_(False) # huge memory savings here
-            .to(device=DEVICE) # big speed improvement
-        )
+        .requires_grad_(False)  # huge memory savings here
+        .to(device=DEVICE)  # big speed improvement
+    )
 
     # Setup tokenizer here because dataset mapping ruins forces parallelism=False
-    os.environ['TOKENIZERS_PARALLELISM'] = "true"
+    os.environ["TOKENIZERS_PARALLELISM"] = "true"
     tok = AutoTokenizer.from_pretrained(args.model_checkpoint)
     logging.info(f"Loaded tokenizer:\n{tok}")
 
@@ -215,7 +231,9 @@ if __name__ == "__main__":
     n_embd = llm.config.n_embd
     max_length = llm.config.n_positions
 
-    assert args.n_pos <= max_length and args.n_pos > 0, f"n_pos (={args.n_pos}) must be in: 0 < n_pos <= {max_length}"
+    assert (
+        args.n_pos <= max_length and args.n_pos > 0
+    ), f"n_pos (={args.n_pos}) must be in: 0 < n_pos <= {max_length}"
 
     logging.info(f"Loaded LLM to Device: '{DEVICE}'\n{llm}\n{llm.config}")
 
@@ -240,10 +258,10 @@ if __name__ == "__main__":
     batches_progress_bar = tqdm(range(total_batches), total=total_batches, desc="Processing Batches")
 
     file_counter = 0
-    with ProcessPoolExecutor(max_workers=args.batch_size) as executor:    
+    with ProcessPoolExecutor(max_workers=args.batch_size) as executor:
 
         for batch_idx, record_idx in enumerate(range(0, len(ds), args.batch_size)):
-            
+
             batches_progress_bar.update()
 
             if (batch_idx + 1) % args.batches_per_shard == 0:
@@ -257,10 +275,12 @@ if __name__ == "__main__":
                 file_counter += 1
                 shard_progress_bar.update()
                 if file_counter >= args.max_shards_created:
-                    logging.info(f"Processing finished due to max shards (={args.max_shards_created}) created. Exiting.")
+                    logging.info(
+                        f"Processing finished due to max shards (={args.max_shards_created}) created. Exiting."
+                    )
                     break
 
-            batch = ds[record_idx: record_idx + args.batch_size]
+            batch = ds[record_idx : record_idx + args.batch_size]
             text = batch[args.ds_input_column]
 
             tokenized_games = tok(
@@ -273,7 +293,7 @@ if __name__ == "__main__":
             )
 
             # Compute number of positions in each game transcript
-            token_count = tokenized_games['attention_mask'].sum(dim=-1).tolist()
+            token_count = tokenized_games["attention_mask"].sum(dim=-1).tolist()
 
             # Batch forward pass for computationally efficiency
             with torch.no_grad():
@@ -283,13 +303,21 @@ if __name__ == "__main__":
                 # Stack hidden states into a single tensor of shape (n_layers, batch_size, n_positions, d_hidden)
                 # Skip the first hidden element which is actually just the embeddings
                 # hidden_states.shape = (n_layers, batch_size, n_positions, d_hidden)
-                hidden_states = torch.stack(hidden_states[1:]).to(torch.device('cpu'))  
+                hidden_states = torch.stack(hidden_states[1:]).to(torch.device("cpu"))
 
             ####
             # Create a record for each game (can be parallelized)
             ####
             futures = [
-                executor.submit(process_single_game, index, hidden_states, token_count, args.n_pos, batch, args.ds_label_columns)
+                executor.submit(
+                    process_single_game,
+                    index,
+                    hidden_states,
+                    token_count,
+                    args.n_pos,
+                    batch,
+                    args.ds_label_columns,
+                )
                 for index in range(args.batch_size)
             ]
 
@@ -298,9 +326,9 @@ if __name__ == "__main__":
             for future in futures:
                 batch_records.extend(future.result())
 
-            batch_dataset = Dataset.from_dict({
-                "HiddenStates": [record["HiddenStates"] for record in batch_records]
-            })
+            batch_dataset = Dataset.from_dict(
+                {"HiddenStates": [record["HiddenStates"] for record in batch_records]}
+            )
 
             # Add other columns for the labels
             for label in args.ds_label_columns:
@@ -308,7 +336,7 @@ if __name__ == "__main__":
 
             # Concatenate the batch dataset to the main dataset
             main_dataset = concatenate_datasets([main_dataset, batch_dataset])
-        
+
         # Save remaining entries (if any) to disk
         if len(main_dataset) > 0:
             # This code is only reachable if the max shard count exceeds len(dataset) / batches_per_shard
