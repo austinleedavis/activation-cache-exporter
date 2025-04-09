@@ -11,7 +11,8 @@
 module load apptainer
 module load cuda/cuda-12.4.0
 
-# Avg transcript len = 0.037109375 MB per record => 
+# Avg transcript len = 0.037109375 MB per record (~300 records /game) => 
+#      269,470 records ~ 10GB shard size 
 #       26,947 records ~ 1GB shard size 
 #       16,384 records ~ 608MB
 
@@ -23,7 +24,8 @@ python prepare.py --output_dir data/activations/lichess-uci-201410 \
     --batch_size 128  \
     --auto_find_batch_size \
     --sort_ds_reversed \
-    --records_per_shard 26947 \
+    --records_per_shard 269470 \
+    --max_shards 10 \
     --model_checkpoint austindavis/chessGPT2 \
     --ds_config 201410 \
     --ds_repo austindavis/lichess-uci \
