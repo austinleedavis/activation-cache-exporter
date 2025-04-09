@@ -197,8 +197,10 @@ if __name__ == "__main__":
     # dataset metrics
     num_batches = torch.math.ceil((len(ds) / args.batch_size))
     # estimate total records assuming 468 chars=94 moves=281 tokens/game ~ rounded to 300
-    total_records_est = 300 * len(ds)
-    total_shards_est = min(args.max_shards, 1 + total_records_est // args.records_per_shard)
+
+    records_in_ds_est = 300 * len(ds)
+    total_shards_est = min(args.max_shards, 1 + records_in_ds_est // args.records_per_shard)
+    total_records_est = total_shards_est * args.records_per_shard
 
     if args.ds_shuffle_seed:
         ds = ds.shuffle(args.ds_shuffle_seed)  # .select(range(total_records))
