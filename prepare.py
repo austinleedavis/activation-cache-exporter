@@ -39,15 +39,30 @@ import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
 
-import datasets
 import numpy as np
 import torch
-from datasets import Dataset, concatenate_datasets, load_dataset
+from datasets import Dataset, concatenate_datasets, disable_progress_bar, load_dataset
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-DEBUG = False
-DEBUG_ARGS = "--output_dir data/activations/unsorted --sort_ds_by_len --sort_ds_reversed --auto_find_batch_size --records_per_shard 5000 --batch_size 2  --max_shards 3 --model_checkpoint austindavis/chessGPT2 --ds_config 202302-00000-00009 --ds_repo austindavis/lichess-uci-scored --ds_split train --ds_input_column Transcript --ds_label_columns Site WhiteElo BlackElo Transcript Scores --n_pos 1024 --log_file log.txt".split()
+DEBUG = True
+DEBUG_ARGS = """
+--output_dir data/activations/lichess-uci-201301
+--model_checkpoint austindavis/chessGPT2
+--ds_config 201301
+--ds_repo austindavis/lichess-uci
+--ds_split train
+--ds_input_column Transcript
+--ds_label_columns Site WhiteElo BlackElo Transcript
+--sort_ds_by_len
+--sort_ds_reversed
+--batch_size 2 
+--auto_find_batch_size
+--max_shards 3
+--records_per_shard 8192
+--n_pos 1024 
+--log_file log.txt
+    """.strip().split()
 
 
 def parse_args():
@@ -154,7 +169,6 @@ def remove_prefixes(strings: list[str], indices: list[int]) -> list[int]:
     result = []
 
     for i, s in enumerate(strings[:-1]):
-        # if any(other.startswith(s) for other in strings[i+1:]):
         if str(strings[i + 1]).startswith(str(s)):
             continue
         result.append(indices[i])
@@ -276,7 +290,7 @@ if __name__ == "__main__":
     ##############
     # Main loop
     ##############
-    datasets.disable_progress_bar()
+    disable_progress_bar()
 
     # Initialize an empty Huggingface dataset
     main_dataset = init_dataset_shard(args.ds_label_columns)
@@ -318,7 +332,7 @@ if __name__ == "__main__":
                 # Stack hidden states into a single tensor of shape (n_layers, batch_size, n_positions, d_hidden)
                 # Skip the first hidden element which is actually just the embeddings
                 # hidden_states.shape = (n_layers, batch_size, n_positions, d_hidden)
-                hidden_states = torch.stack(hidden_states[1:]).to(torch.device("cpu"))
+                hidden_states = torch.stack(hidden_states).to(torch.device("cpu"))
 
             ####
             # Create a record for each game (can be parallelized)
