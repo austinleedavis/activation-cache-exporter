@@ -2,3 +2,4 @@
 
 data/
 slurm/
+__pycache__*
