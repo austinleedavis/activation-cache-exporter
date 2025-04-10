@@ -39,13 +39,18 @@ import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor
 
+import dotenv
 import numpy as np
 import torch
 from datasets import Dataset, concatenate_datasets, disable_progress_bar, load_dataset
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-DEBUG = True
+from ntfy import Ntfy
+
+dotenv.load_dotenv()
+
+DEBUG = os.environ.get("DEBUG", False)
 DEBUG_ARGS = """
 --output_dir data/activations/lichess-uci-201301
 --model_checkpoint austindavis/chessGPT2
@@ -177,6 +182,9 @@ def remove_prefixes(strings: list[str], indices: list[int]) -> list[int]:
 
 
 if __name__ == "__main__":
+    ntfy_topic = os.environ.get("NTFY_TOPIC", None)
+    if ntfy_topic:
+        Ntfy(ntfy_topic).send_notification("Dataset preparation Started")
 
     args = parse_args()
 
@@ -374,3 +382,6 @@ if __name__ == "__main__":
             flush_shards(main_dataset, file_counter, shard_progress, force=True)
             # file_path = get_output_file(args.output_dir, file_counter, total_shards_est)
             # main_dataset.to_parquet(file_path)
+
+    if ntfy_topic:
+        Ntfy(ntfy_topic).send_notification("Dataset preparation completed")
